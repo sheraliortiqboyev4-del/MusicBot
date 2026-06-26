@@ -36,22 +36,36 @@ async def start(_, message: types.Message):
     )
 
     key = buttons.start_key(message.lang, private)
-    await message.reply_photo(
-        photo=config.START_IMG,
-        caption=_text,
-        reply_markup=key,
-        quote=not private,
-    )
+    try:
+        await message.reply_photo(
+            photo=config.START_IMG,
+            caption=_text,
+            reply_markup=key,
+            quote=not private,
+        )
+    except Exception as e:
+        print(f"Rasm yuborishda xato: {e}")
+        await message.reply_text(
+            text=_text,
+            reply_markup=key,
+            quote=not private,
+        )
 
     if private:
         if await db.is_user(message.from_user.id):
             return
-        await utils.send_log(message)
+        try:
+            await utils.send_log(message)
+        except Exception as e:
+            print(f"User log yuborishda xato: {e}")
         await db.add_user(message.from_user.id)
     else:
         if await db.is_chat(message.chat.id):
             return
-        await utils.send_log(message, True)
+        try:
+            await utils.send_log(message, True)
+        except Exception as e:
+            print(f"Chat log yuborishda xato: {e}")
         await db.add_chat(message.chat.id)
 
 

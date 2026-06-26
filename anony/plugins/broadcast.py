@@ -51,6 +51,16 @@ async def _broadcast(_, message: types.Message):
                 await asyncio.sleep(0.2)
             except errors.FloodWait as fw:
                 await asyncio.sleep(fw.value + 10)
+            except errors.PeerIdInvalid:
+                # Noto'g'ri ID, uni o'chirib tashlaymiz
+                if chat in groups:
+                    await db.rm_chat(chat)
+                else:
+                    await db.rm_user(chat)
+                if not failed:
+                    failed = open("errors.txt", "w")
+                failed.write(f"{chat} - Noto'g'ri ID, o'chirildi\n")
+                continue
             except Exception as ex:
                 if not failed:
                     failed = open("errors.txt", "w")

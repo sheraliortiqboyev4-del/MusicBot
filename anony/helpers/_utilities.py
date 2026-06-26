@@ -92,38 +92,46 @@ class Utilities:
         title: str,
         duration: str,
     ) -> None:
-        if m.chat.id == app.logger:
+        if not app.logger or m.chat.id == app.logger:
             return
-        _text = m.lang["play_log"].format(
-            app.name,
-            m.chat.id,
-            m.chat.title,
-            m.from_user.id,
-            m.from_user.mention,
-            link,
-            title,
-            duration,
-        )
-        await app.send_message(chat_id=app.logger, text=_text)
+        try:
+            _text = m.lang["play_log"].format(
+                app.name,
+                m.chat.id,
+                m.chat.title,
+                m.from_user.id,
+                m.from_user.mention,
+                link,
+                title,
+                duration,
+            )
+            await app.send_message(chat_id=app.logger, text=_text)
+        except Exception as e:
+            print(f"Play log yuborishda xato: {e}")
 
     async def send_log(self, m: types.Message, chat: bool = False) -> None:
-        if chat:
-            user = m.from_user
-            return await app.send_message(
+        if not app.logger:
+            return
+        try:
+            if chat:
+                user = m.from_user
+                return await app.send_message(
+                    chat_id=app.logger,
+                    text=m.lang["log_chat"].format(
+                        m.chat.id,
+                        m.chat.title,
+                        user.id if user else 0,
+                        user.mention if user else "Anonymous",
+                    ),
+                )
+
+            await app.send_message(
                 chat_id=app.logger,
-                text=m.lang["log_chat"].format(
-                    m.chat.id,
-                    m.chat.title,
-                    user.id if user else 0,
-                    user.mention if user else "Anonymous",
+                text=m.lang["log_user"].format(
+                    m.from_user.id,
+                    f"@{m.from_user.username}",
+                    m.from_user.mention,
                 ),
             )
-
-        await app.send_message(
-            chat_id=app.logger,
-            text=m.lang["log_user"].format(
-                m.from_user.id,
-                f"@{m.from_user.username}",
-                m.from_user.mention,
-            ),
-        )
+        except Exception as e:
+            print(f"Log yuborishda xato: {e}")

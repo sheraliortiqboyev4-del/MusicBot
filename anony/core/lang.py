@@ -24,6 +24,7 @@ lang_codes = {
     "pt": "Português",
     "ru": "Русский",
     "tr": "Türkçe",
+    "uz": "O'zbek",
     "zh": "中文"
 }
 
