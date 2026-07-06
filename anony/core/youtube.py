@@ -119,117 +119,38 @@ class YouTube:
             return filename
 
         cookie = self.get_cookies()
+        base_opts = {
+            "outtmpl": "downloads/%(id)s.%(ext)s",
+            "quiet": True,
+            "noplaylist": True,
+            "geo_bypass": True,
+            "no_warnings": True,
+            "overwrites": False,
+            "nocheckcertificate": True,
+            "cookiefile": cookie,
+        }
 
-        # Try primary format first
         if video:
-            primary_opts = {
-                "outtmpl": "downloads/%(id)s.%(ext)s",
-                "quiet": True,
-                "noplaylist": True,
-                "geo_bypass": True,
-                "no_warnings": True,
-                "overwrites": False,
-                "nocheckcertificate": True,
-                "cookiefile": cookie,
+            ydl_opts = {
+                **base_opts,
                 "format": "(bestvideo[height<=?720][width<=?1280][ext=mp4])+(bestaudio)",
                 "merge_output_format": "mp4",
             }
-            # Fallback format for video
-            fallback_opts = {
-                "outtmpl": "downloads/%(id)s.%(ext)s",
-                "quiet": True,
-                "noplaylist": True,
-                "geo_bypass": True,
-                "no_warnings": True,
-                "overwrites": False,
-                "nocheckcertificate": True,
-                "cookiefile": cookie,
-                "format": "best[ext=mp4][height<=?720]",
-            }
         else:
-            primary_opts = {
-                "outtmpl": "downloads/%(id)s.%(ext)s",
-                "quiet": True,
-                "noplaylist": True,
-                "geo_bypass": True,
-                "no_warnings": True,
-                "overwrites": False,
-                "nocheckcertificate": True,
-                "cookiefile": cookie,
+            ydl_opts = {
+                **base_opts,
                 "format": "bestaudio[ext=webm][acodec=opus]",
             }
-            # Fallback formats for audio
-            fallback_opts_list = [
-                {
-                    **primary_opts,
-                    "format": "bestaudio[ext=m4a]",
-                },
-                {
-                    **primary_opts,
-                    "format": "bestaudio",
-                },
-            ]
 
         def _download():
-            # First try primary format
-            with yt_dlp.YoutubeDL(primary_opts) as ydl:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 try:
                     ydl.download([url])
-                    return filename
+                except (yt_dlp.utils.DownloadError, yt_dlp.utils.ExtractorError):
+                    return None
                 except Exception as ex:
-                    logger.warning("Primary download failed: %s, trying fallbacks", ex)
-                    
-            # If video, try fallback format
-            if video:
-                with yt_dlp.YoutubeDL(fallback_opts) as ydl:
-                    try:
-                        ydl.download([url])
-                        return filename
-                    except Exception as ex:
-                        logger.warning("Video fallback download failed: %s", ex)
-                        return None
-            else:
-                # If audio, try all fallback formats
-                for opts in fallback_opts_list:
-                    with yt_dlp.YoutubeDL(opts) as ydl:
-                        try:
-                            ydl.download([url])
-                            # Check what file was downloaded
-                            for f in Path("downloads").iterdir():
-                                if f.stem == video_id and f.is_file():
-                                    return str(f)
-                        except Exception as ex:
-                            logger.warning("Fallback download failed: %s", ex)
-                            continue
-                return None
+                    logger.warning("Download failed: %s", ex)
+                    return None
+            return filename
 
-        result = await asyncio.to_thread(_download)
-        
-        # Also try without cookies if all else fails
-        if not result:
-            logger.info("Trying download without cookies...")
-            
-            def _download_no_cookies():
-                opts = {
-                    "outtmpl": "downloads/%(id)s.%(ext)s",
-                    "quiet": True,
-                    "noplaylist": True,
-                    "geo_bypass": True,
-                    "no_warnings": True,
-                    "overwrites": False,
-                    "nocheckcertificate": True,
-                    "format": "bestaudio" if not video else "best[height<=?720]",
-                }
-                with yt_dlp.YoutubeDL(opts) as ydl:
-                    try:
-                        ydl.download([url])
-                        for f in Path("downloads").iterdir():
-                            if f.stem == video_id and f.is_file():
-                                return str(f)
-                    except Exception as ex:
-                        logger.warning("No-cookie download failed: %s", ex)
-                        return None
-            
-            result = await asyncio.to_thread(_download_no_cookies)
-        
-        return result
+        return await asyncio.to_thread(_download)
