@@ -9,6 +9,7 @@ import yt_dlp
 import random
 import asyncio
 import aiohttp
+from urllib.parse import parse_qs, quote, urlparse
 from pathlib import Path
 
 from py_yt import Playlist, VideosSearch
@@ -20,6 +21,7 @@ from anony.helpers import Track, utils
 class YouTube:
     def __init__(self):
         self.base = "https://www.youtube.com/watch?v="
+        self.api_base = "https://musurmonov-begzod.uz/down_api/"
         self.cookies = []
         self.checked = False
         self.cookie_dir = "anony/cookies"
@@ -110,13 +112,93 @@ class YouTube:
             pass
         return tracks
 
-    async def download(self, video_id: str, video: bool = False) -> str | None:
-        url = self.base + video_id
-        ext = "mp4" if video else "webm"
+    async def _download_via_api(self, url: str, video: bool = False) -> str | None:
+        parsed = urlparse(url)
+        query = parse_qs(parsed.query)
+        video_id = query.get("v", [parsed.path.rsplit("/", 1)[-1]])[0]
+        ext = "mp4" if video else "mp3"
         filename = f"downloads/{video_id}.{ext}"
 
         if Path(filename).exists():
             return filename
+
+        api_url = f"{self.api_base}?url={quote(url, safe='')}"
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(api_url, timeout=aiohttp.ClientTimeout(total=45)) as resp:
+                    if resp.status != 200:
+                        return None
+                    payload = await resp.json(content_type=None)
+        except Exception as ex:
+            logger.warning("API fallback failed: %s", ex)
+            return None
+
+        if not payload or payload.get("error"):
+            return None
+
+        candidates: list[str] = []
+
+        def walk(value):
+            if isinstance(value, dict):
+                for key, item in value.items():
+                    if isinstance(item, (dict, list)):
+                        walk(item)
+                    elif isinstance(item, str):
+                        lowered = item.lower()
+                        if item.startswith("http"):
+                            candidates.append(item)
+                        elif key.lower() in {"audio_url", "mp3_url", "download_url", "link", "url", "file"} and lowered.startswith("http"):
+                            candidates.append(item)
+            elif isinstance(value, list):
+                for item in value:
+                    walk(item)
+
+        walk(payload)
+
+        download_url = None
+        preferred = (".mp3", ".mp4", ".m4a", ".aac", ".ogg", ".webm")
+        for candidate in candidates:
+            lowered = candidate.lower()
+            if lowered.endswith(preferred):
+                if video and lowered.endswith((".mp4", ".webm", ".m4a")):
+                    download_url = candidate
+                    break
+                if not video and lowered.endswith((".mp3", ".m4a", ".aac", ".ogg", ".webm")):
+                    download_url = candidate
+                    break
+            elif "googlevideo" in lowered and ("videoplayback" in lowered or "download" in lowered):
+                download_url = candidate
+                break
+
+        if not download_url:
+            return None
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(download_url, timeout=aiohttp.ClientTimeout(total=60)) as resp:
+                    if resp.status != 200:
+                        return None
+                    data = await resp.read()
+        except Exception as ex:
+            logger.warning("API stream download failed: %s", ex)
+            return None
+
+        Path("downloads").mkdir(parents=True, exist_ok=True)
+        with open(filename, "wb") as fw:
+            fw.write(data)
+        return filename
+
+    async def download(self, video_id: str, video: bool = False) -> str | None:
+        url = self.base + video_id
+        ext = "mp4" if video else "mp3"
+        filename = f"downloads/{video_id}.{ext}"
+
+        if Path(filename).exists():
+            return filename
+
+        api_download = await self._download_via_api(url, video=video)
+        if api_download:
+            return api_download
 
         cookie = self.get_cookies()
         base_opts = {
