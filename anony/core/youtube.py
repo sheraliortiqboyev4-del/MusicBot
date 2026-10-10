@@ -195,6 +195,11 @@ class YouTube:
 
         if Path(filename).exists():
             return filename
+        if not video:
+            for audio_ext in ("m4a", "webm", "opus", "ogg", "aac"):
+                audio_file = Path(f"downloads/{video_id}.{audio_ext}")
+                if audio_file.exists():
+                    return str(audio_file)
 
         api_download = await self._download_via_api(url, video=video)
         if api_download:
@@ -221,18 +226,45 @@ class YouTube:
         else:
             ydl_opts = {
                 **base_opts,
-                "format": "bestaudio[ext=webm][acodec=opus]",
+                "format": "bestaudio/best",
             }
 
         def _download():
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 try:
-                    ydl.download([url])
-                except (yt_dlp.utils.DownloadError, yt_dlp.utils.ExtractorError):
+                    info = ydl.extract_info(url, download=True)
+                except (yt_dlp.utils.DownloadError, yt_dlp.utils.ExtractorError) as ex:
+                    logger.warning("yt-dlp download failed for %s: %s", video_id, ex)
                     return None
                 except Exception as ex:
                     logger.warning("Download failed: %s", ex)
                     return None
-            return filename
+
+                if not info:
+                    logger.warning("yt-dlp returned no media information for %s", video_id)
+                    return None
+
+                downloaded_path = info.get("filepath") or info.get("_filename")
+                if not downloaded_path:
+                    requested = info.get("requested_downloads") or []
+                    downloaded_path = next(
+                        (
+                            item.get("filepath")
+                            for item in requested
+                            if item.get("filepath")
+                        ),
+                        None,
+                    )
+                if not downloaded_path:
+                    downloaded_path = ydl.prepare_filename(info)
+
+                path = Path(downloaded_path)
+                if path.is_file():
+                    return str(path)
+                if video and path.with_suffix(".mp4").is_file():
+                    return str(path.with_suffix(".mp4"))
+
+                logger.warning("yt-dlp reported success but output file is missing: %s", path)
+                return None
 
         return await asyncio.to_thread(_download)
